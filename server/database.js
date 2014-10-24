@@ -4,6 +4,7 @@ var uuid = require('uuid');
 var async = require('async');
 var lib = require('./lib');
 var pg = require('pg');
+var _ = require('lodash');
 
 var databaseUrl = process.env.DATABASE_URL;
 
@@ -58,6 +59,7 @@ exports.query = query;
 
 // callback takes (err, data)
 
+exports.getClient = getClient;
 function getClient(runner, callback) {
     doIt();
 
@@ -810,3 +812,7 @@ exports.getSiteStats = function(callback) {
     });
 
 };
+
+// Export database/**.js files as well
+
+exports = _.merge(exports, require('./database/investments'));
