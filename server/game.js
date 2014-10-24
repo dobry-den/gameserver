@@ -7,7 +7,6 @@ var cryptoRand = require('crypto-rand');
 var _ = require('lodash');
 var lib = require('./lib');
 
-var maxWin = process.env.MAX_LOSS ? parseInt(process.env.MAX_LOSS) : 2e8; // The max loss in a single game, in satoshis
 var tickRate = 150; // ping the client every X miliseconds
 var afterCrashTime = 3000; // how long from game_crash -> game_starting
 var restartTime = 5000; // How long from  game_starting -> game_started
@@ -15,6 +14,7 @@ var restartTime = 5000; // How long from  game_starting -> game_started
 function Game(gameHistory) {
     var self = this;
 
+    self.maxLoss; // The max loss in a single game, in satoshis
     self.gameShuttingDown = false;
     self.gameShuttingDownFast = false;
     self.pending = 0; // How many people are trying to join the game...
@@ -44,28 +44,38 @@ function Game(gameHistory) {
         var seed = lib.randomHex(16);
 
 
-        db.createGame(crashPoint, seed, function (err, gameId) {
+        db.calcMaxLoss(function(err, maxLoss) {
             if (err) {
-                console.log('Could not create game', err, ' retrying in 2 sec..');
-                setTimeout(runGame, 2000);
+                console.log('Could not calcMaxLoss: ', err, ', retrying in 1 sec.');
+                setTimeout(runGame, 1000);
                 return;
             }
+            console.log('maxLoss: ', maxLoss);
+            self.maxLoss = maxLoss;
 
-            self.state = 'STARTING';
-            self.seed = seed;
-            self.crashPoint = crashPoint;
-            self.gameId = gameId;
-            self.startTime = new Date(Date.now() + restartTime);
-            self.players = {}; // An object of userName ->  { user: ..., playId: ..., autoCashOut: ...., status: ... }
-            self.gameDuration = Math.ceil(inverseGrowth(self.crashPoint + 1)); // how long till the game will crash..
+            db.createGame(crashPoint, seed, function (err, gameId) {
+                if (err) {
+                    console.log('Could not create game', err, ' retrying in 2 sec..');
+                    setTimeout(runGame, 2000);
+                    return;
+                }
 
-            self.emit('game_starting', {
-                game_id: gameId,
-                hash: lib.sha(self.crashPoint + '|' + self.seed),
-                time_till_start: restartTime
+                self.state = 'STARTING';
+                self.seed = seed;
+                self.crashPoint = crashPoint;
+                self.gameId = gameId;
+                self.startTime = new Date(Date.now() + restartTime);
+                self.players = {}; // An object of userName ->  { user: ..., playId: ..., autoCashOut: ...., status: ... }
+                self.gameDuration = Math.ceil(inverseGrowth(self.crashPoint + 1)); // how long till the game will crash..
+
+                self.emit('game_starting', {
+                    game_id: gameId,
+                    hash: lib.sha(self.crashPoint + '|' + self.seed),
+                    time_till_start: restartTime
+                });
+
+                setTimeout(startGame, restartTime);
             });
-
-            setTimeout(startGame, restartTime);
         });
     }
 
@@ -388,12 +398,16 @@ Game.prototype.setForcePoint = function() {
    if (totalBet === 0) {
        self.forcePoint = null; // the game can go until it crashes, there's no end.
    } else {
-       var left = maxWin - totalCashedOut;
+       var left = self.maxLoss - totalCashedOut;
 
        var ratio =  (left+totalBet) / totalBet;
 
        // in percent
-       self.forcePoint = Math.max(Math.floor(ratio * 100), 101);
+       self.forcePoint = (function() {
+           var forcePoint = Math.max(Math.floor(ratio * 100), 101);
+           console.log('forcePoint: ', forcePoint);
+           return forcePoint;
+       })();
    }
 
 };

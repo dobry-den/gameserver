@@ -134,8 +134,12 @@ RETURNING *
 
 // Calculates the total amount of investor contributions for this game.
 // Should be calculated at the start of game.
-// Returns integer
+// Returns integer (satoshis)
+// Override with env var: MAX_LOSS
 exports.calcMaxLoss = function(cb) {
+    if (process.env.MAX_LOSS)
+        return parseInt(process.env.MAX_LOSS);
+
     var sql = m(function() {/*
 SELECT
   SUM(LEAST(contribution, amount)) as total
